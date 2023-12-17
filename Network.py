@@ -1,6 +1,8 @@
 import math
 
-from InputNeuron import InputNeuron
+from EvolvingNetwork.BottomNeuron import BottomNeuron
+from EvolvingNetwork.InnerNeuron import InnerNeuron
+from EvolvingNetwork.TopNeuron import TopNeuron
 from LossFunctions import mse
 from Neuron import Neuron
 from OutputNeuron import OutputNeuron
@@ -10,116 +12,91 @@ from utils import argmax
 
 class Network:
 
-    def __init__(self, input_size, hidden_size, output_size):
-        # Store the neuron counts
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.output_size = output_size
+    def __init__(self, inputSize: int, initialHiddenSize: int, outputSize: int):
+        # Store the top layer neurons - Input/sensory data goes directly into these, one
+        # datapoint per neuron.
+        self.topNeurons = list()
+        # Do inner processing, all initiated by the above neurons.
+        self.innerNeurons = list()
+        # Formulate output, again initiated by the above neurons.
+        self.outputNeurons = list()
 
-        # Store the non-input neurons contained within this network and their ids.
-        self.neurons = dict()
-        self.id_to_neuron = dict()
-        # Store the highest neuron ID allocated so far.
-        self.max_id = 0
-
-        # Store the neurons that receive input directly
-        self.inputs = list()
-
-        # Store the output neurons and their output indices
-        self.outputs = dict()
-        # Store the updates, received from the outputs
-        self.updates = None
-        # Store the update count. Once this equals the same as the number of output neurons, a result is produced
-        # and backprop can start.
-        self.update_count = 0
-
-        # Store the final result
-        self.result = 0
+        self.inputSize = inputSize
+        self.initialHiddenSize = initialHiddenSize
+        self.outputSize = outputSize
 
         # Store the learn rate
-        self.learn_rate = 0.05
+        self.learnRate = 0.05
 
+        # Stores the output history.
+        self.outputHistory = list()
         # Store the loss function and its results
-        self.loss_function = mse
-        self.loss = 0
-        self.loss_prime = 0
+        self.lossFunction = mse
+        self.lossHistory = list()
+        self.lossPrime = 0
+
+        # Stores a mapping of neurons to their IDs.
+        self.registeredNeurons = dict()
+        # Stores the current maximum ID
+        self.maxId = 0
 
     # Initializes every neuron in the network, in the form of a simple dense linear model.
     def initialize(self):
         # Create the input neurons
-        self.createInputNeurons(self.input_size)
-        # Create the hidden layer, connecting each neuron to the entire input.
-        hidden_connections = [neuron.uuid for neuron in self.inputs]
-        output_connections = list()
-        for i in range(self.hidden_size):
-            uuid = self.createNeuron(hidden_connections)
-            output_connections.append(uuid)
+        self.topNeurons = [TopNeuron(self) for i in range(self.inputSize)]
 
-        # Create output neurons
-        self.updates = [0] * self.output_size
-        for i in range(self.output_size):
-            uuid = self.createOutputNeuron(output_connections)
-            self.outputs[self.id_to_neuron[uuid]] = i
+        # Create the hidden neurons.
+        self.innerNeurons = [InnerNeuron(self) for i in range(self.inputSize)]
 
-        for neuron in self.id_to_neuron.values():
-            neuron.initialize()
+        # Create the output neurons
+        self.outputNeurons = [BottomNeuron(self) for i in range(self.outputSize)]
 
-    def predict(self, x: list):
+        # For our top layer, we connect every inner neuron to every top neuron,
+        # and every output neuron to every inner neuron.
+        # This creates a fully connected one layer perceptron.
+        for neuron in self.innerNeurons:
+            for topNeuron in self.topNeurons:
+                neuron.addInputNeuron(topNeuron)
+
+        for outNeuron in self.outputNeurons:
+            for neuron in self.innerNeurons:
+                outNeuron.addInputNeuron(neuron)
+
+    def forward(self, x: list[float], train: bool = False):
+        if len(x) != len(self.topNeurons):
+            raise Exception("Length of network input must match number of top layer neurons.")
+
         for i in range(len(x)):
-            if i > len(self.inputs) - 2:
-                print("Pause")
-
-            neuron = self.inputs[i]
-            neuron.update(x[i])
-
-        return self.updates
+            self.topNeurons[i].setOutput(x[i])
+        output = [neuron.output for neuron in self.outputNeurons]
+        self.outputHistory.append(output)
+        return output
 
     def backward(self):
-        delta = self.loss * self.loss_prime
-        for neuron in self.outputs:
-            neuron.back_update(delta)
+        # Loss derivative
+        delta = self.lossHistory[-1] * self.lossPrime
+        for neuron in self.outputNeurons:
+            neuron.backwardNetwork(delta * neuron.output)
 
-    # Receive an update from an output neuron
-    def update(self, neuron):
-        index = self.outputs[neuron]
-        self.updates[index] = neuron.out
+    def getLoss(self, actual: list[float], expected: list[float]):
+        result = argmax(actual)
+        loss, self.lossPrime = self.lossFunction(actual, expected)
+        self.lossHistory.append(loss)
+        print(f"Prediction is: {result} with a loss of {loss}")
+        return loss
 
-        self.update_count += 1
+    # Gets the prediction of a network.
+    def getPrediction(self, index: int = None):
+        if index is not None:
+            return self.outputHistory[index]
+        return argmax(self.outputHistory[-1])
 
-    def get_loss(self, actual: list, expected: list):
-        self.result = argmax(actual)
-        self.loss, self.loss_prime = self.loss_function(actual, expected)
-        print(f"Prediction is: {self.result} with a loss of {self.loss}")
-        return self.result
-
-    # Used for neurons to register with the network
+    # # Used for neurons to register with the network
     def register(self, neuron):
-        if neuron in self.neurons:
-            raise ValueError(f"This neuron is already part of the network, with ID {self.neurons[neuron]}.")
+        if neuron in self.registeredNeurons:
+            raise ValueError(f"This neuron is already part of the network, with ID {self.registeredNeurons[neuron]}.")
         else:
             # Give the neuron an ID
-            self.max_id = self.max_id + 1
-            self.neurons[neuron] = self.max_id
-            self.id_to_neuron[self.max_id] = neuron
-            return self.max_id
-
-    def createInputNeurons(self, size: int):
-        for i in range(size):
-            neuron = InputNeuron(self)
-            self.inputs.append(neuron)
-
-    # Takes a range of neuron IDs
-    def createNeuron(self, connection_ids: list[int]) -> int:
-        neuron = Neuron(self)
-
-        for entry in connection_ids:
-            neuron.add_input(self.id_to_neuron[entry])
-        return neuron.uuid
-
-    # Takes a range of neuron IDs
-    def createOutputNeuron(self, connection_ids: list[int]) -> int:
-        neuron = OutputNeuron(self)
-
-        for entry in connection_ids:
-            neuron.add_input(self.id_to_neuron[entry])
-        return neuron.uuid
+            self.maxId = self.maxId + 1
+            self.registeredNeurons[neuron] = self.maxId
+            return self.maxId

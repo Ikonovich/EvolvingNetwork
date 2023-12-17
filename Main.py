@@ -1,18 +1,13 @@
 import torch
 
-from Network import Network
+from EvolvingNetwork.NetworkBuilder import createFlatDenseNetwork
 from utils import load_mnist, argmax
 
 
-def createFlatDenseNetwork() -> Network:
-    network = Network(input_size=28*28, hidden_size=100, output_size=10)
-    network.initialize()
-    return network
+# Test the baseline evolving network with the MNIST dataset.
+def mnistTest():
 
-
-if __name__ == "__main__":
     model = createFlatDenseNetwork()
-
     dataset = load_mnist()
 
     # Normalize and convert to a list
@@ -32,9 +27,16 @@ if __name__ == "__main__":
     test_y = y[50000:]
 
     for x, y in zip(train, train_y):
-        output = model.predict(x)
-        result = argmax(output)
-        print(f"Actual: {result} Expected: {y}")
-        model.get_loss(actual=output, expected=y)
+        output = model.forward(x)
+        actual = argmax(output)
+        expected = argmax(y)
+        print(f"Actual: {actual} Expected: {expected}")
+        loss = model.getLoss(actual=output, expected=y)
         model.backward()
+        # model.backward()
+
+
+if __name__ == "__main__":
+    mnistTest()
+
 

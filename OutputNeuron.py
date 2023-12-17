@@ -6,32 +6,35 @@ class OutputNeuron(Neuron):
 
     def __init__(self, network):
         super().__init__(network)
-        self.activation = sigmoid
-        self.loss_prime = 0
+        # The neurons that receive output from this neuron, and the weight index. Output is propagated
+        # in the order of the list.
+        self.outputNeurons = list()
 
-    # Takes individual inputs from each input neuron.
-    # Once all updates have been received, initiates a forward operation.
-    def update(self, neuron: "Neuron"):
-        index = self.inputs[neuron]
-        self.updates[index] = neuron.out
-        self.update_count += 1
-        if self.update_count == len(self.inputs):
-            self.forward()
+        # Store the last calculated output and the derivative
+        self.output = 0
+        self.outputPrime = 0
 
-    def back_update(self, delta: float):
-        self.loss = delta 
-        self.back_update_count += 1
+    def update(self):
+        pass
 
-    # Calculate the output and send it to the network
     def forward(self):
-        super().forward()
-        self.network.update(self)
+        pass
 
-    def add_output(self, neuron: Neuron):
-        raise ValueError("Output Neurons can not have additional outputs added.")
+    # When called, sends an update notification to each of its output neurons.
+    def propagate(self):
+        for neuron in self.outputNeurons:
+            neuron.update()
 
-    def remove_output(self, neuron: Neuron):
-        raise ValueError("Output Neurons can not have outputs removed.")
+    # Adds an output neuron to this neuron. Should only be called by the neuron
+    # adding this neuron as an input.
+    def addOutputNeuron(self, neuron):
+        self.outputNeurons.append(neuron)
+
+    # Removes a single output neuron. Should only be called by the neuron
+    # removing this neuron as an input.
+    def removeOutputNeuron(self, index: int):
+        del self.outputNeurons[index]
+
 
 
 
